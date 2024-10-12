@@ -23,7 +23,6 @@ jobs:
         run: echo "Linting repository"
         continue-on-error: false
 
-
   build-and-push-image:
     name: Build and Push Docker Image
     needs: integration
@@ -39,12 +38,12 @@ jobs:
 
       - name: Build and Tag Docker Image with Commit Hash
         id: build-image
-        env:
-          IMAGE_TAG: latest
         run: |
-          IMAGE_TAG=${GITHUB_SHA::7}
+          IMAGE_TAG=${GITHUB_SHA::7} # Set IMAGE_TAG to the first 7 characters of the commit SHA
+          echo "Image will be tagged as: shayan704/redoproject:$IMAGE_TAG" # Debug logging
           docker build -t shayan704/redoproject:$IMAGE_TAG .
           docker tag shayan704/redoproject:$IMAGE_TAG shayan704/redoproject:latest
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV # Set IMAGE_TAG as an environment variable for the next steps
 
       - name: Login to DockerHub
         run: |
@@ -55,12 +54,15 @@ jobs:
 
       - name: Push Docker Image to DockerHub
         run: |
+          echo "Pushing Docker image with tag: $IMAGE_TAG"
           docker push shayan704/redoproject:$IMAGE_TAG
           docker push shayan704/redoproject:latest
 
       - name: Clean up Docker Images
-        run: docker system prune -f
-        
+        run: |
+          echo "Cleaning up unused Docker images and containers"
+          docker system prune -af
+
   deploy-on-render:
     name: Deploy on Render
     needs: build-and-push-image
