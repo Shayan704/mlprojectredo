@@ -1,26 +1,69 @@
-name: Deploy to Render
+name: workflow
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  build:
+  integration:
+    name: Continuous Integration
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Lint code
+        run: echo "Linting repository"
+      - name: Run unit tests
+        run: echo "Running unit tests"
 
-      - name: Build and Push Docker container to Render
+  build-and-push-render-image:
+    name: Continuous Delivery
+    needs: integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Install Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+      - name: Build and push image to Render
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           docker build -t shayan704/redoproject .
           docker tag shayan704/redoproject registry.render.com/mlprojectredo/shayan704/redoproject:latest
           docker push registry.render.com/mlprojectredo/shayan704/redoproject:latest
-          
+
           # Deploy using Render CLI
           curl -L https://github.com/renderinc/render-cli/releases/download/v0.1.9/render -o /usr/local/bin/render
           chmod +x /usr/local/bin/render
           render login --api-key $RENDER_API_KEY
           render deploy --service-id ${{ secrets.RENDER_SERVICE_ID }} --dockerfile ./Dockerfile
+
+  continuous-deployment:
+    needs: build-and-push-render-image
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+      - name: Pull latest images
+        run: |
+          docker pull registry.render.com/mlprojectredo/shayan704/redoproject:latest
+      - name: Run Docker Image to serve users
+        run: |
+          docker run -d -p 8080:8080 --ipc="host" --name=mltest -e 'RENDER_API_KEY=${{ secrets.RENDER_API_KEY }}' -e 'RENDER_SERVICE_ID=${{ secrets.RENDER_SERVICE_ID }}' registry.render.com/mlprojectredo/shayan704/redoproject:latest
+      - name: Clean previous images and containers
+        run: |
+          docker system prune -f
